@@ -13,11 +13,7 @@ const PORT = process.env.PORT || 10000;
 const JWT_SECRET = process.env.JWT_SECRET || 'campuseats_secret_key_2024';
 
 app.use(cors({
-  origin: [
-    'https://ton-domaine.com',
-    'https://www.ton-domaine.com',
-    'http://localhost:3000'
-  ],
+  origin: '*',  // Autorise tous les domaines
   credentials: true
 }));
 
