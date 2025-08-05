@@ -45,9 +45,9 @@ const db = {
       rating: 4.7,
       prepTime: '8-12 min',
       isOpen: true,
-      // Ajout des credentials restaurant
+      // HASH CORRIGÉ pour "password123"
       email: 'pizzeria@campus.fr',
-      password: '$2b$10$8K1p/a0dclxKOktjNhDYzeUslkh1Oa4VEFLfgOQU9jzb85bZtdCve', // "password123"
+      password: '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', // password123
       menu: [
         { id: 1, name: 'Pizza Margherita', description: 'Tomates, mozzarella, basilic', price: 12.50, category: 'Pizza', image: '🍕' },
         { id: 2, name: 'Pâtes Carbonara', description: 'Pâtes fraîches, lardons, parmesan', price: 9.80, category: 'Pâtes', image: '🍝' },
@@ -63,9 +63,9 @@ const db = {
       rating: 4.9,
       prepTime: '5-8 min',
       isOpen: true,
-      // Ajout des credentials restaurant
+      // HASH CORRIGÉ pour "password123"
       email: 'green@campus.fr',
-      password: '$2b$10$8K1p/a0dclxKOktjNhDYzeUslkh1Oa4VEFLfgOQU9jzb85bZtdCve', // "password123"
+      password: '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', // password123
       menu: [
         { id: 5, name: 'Bowl Healthy', description: 'Quinoa, avocat, légumes de saison', price: 11.90, category: 'Bowl', image: '🥗' },
         { id: 6, name: 'Smoothie Détox', description: 'Épinards, pomme, concombre, citron', price: 5.50, category: 'Boisson', image: '🥤' }
@@ -391,15 +391,23 @@ app.post('/api/restaurant/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    console.log('Tentative de connexion restaurant:', email);
+    console.log('🔐 === DÉBUT CONNEXION RESTAURANT ===');
+    console.log('📧 Tentative de connexion:', email);
 
     const restaurant = db.restaurants.find(r => r.email === email);
     if (!restaurant) {
+      console.log('❌ Restaurant non trouvé avec email:', email);
       return res.status(400).json({ error: 'Email ou mot de passe incorrect' });
     }
 
+    console.log('✅ Restaurant trouvé:', restaurant.name);
+    console.log('🔐 Hash stocké:', restaurant.password);
+
     const isValidPassword = await bcrypt.compare(password, restaurant.password);
+    console.log('🔍 Résultat bcrypt.compare:', isValidPassword);
+
     if (!isValidPassword) {
+      console.log('❌ Mot de passe incorrect pour:', email);
       return res.status(400).json({ error: 'Email ou mot de passe incorrect' });
     }
 
@@ -413,7 +421,8 @@ app.post('/api/restaurant/auth/login', async (req, res) => {
       { expiresIn: '7d' }
     );
 
-    console.log('Connexion restaurant réussie:', restaurant.name);
+    console.log('✅ Connexion restaurant réussie:', restaurant.name);
+    console.log('🔐 === FIN CONNEXION RESTAURANT ===');
 
     res.json({
       message: 'Connexion restaurant réussie',
@@ -429,7 +438,7 @@ app.post('/api/restaurant/auth/login', async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Erreur connexion restaurant:', error);
+    console.error('❌ Erreur connexion restaurant:', error);
     res.status(500).json({ error: 'Erreur lors de la connexion' });
   }
 });
@@ -483,21 +492,21 @@ app.get('/api/restaurant/orders', authenticateRestaurant, (req, res) => {
   try {
     const restaurantId = req.restaurant.restaurantId;
     
-    console.log('Récupération commandes pour restaurant:', restaurantId);
+    console.log('📋 Récupération commandes pour restaurant:', restaurantId);
     
     const restaurantOrders = db.orders
       .filter(order => order.restaurantId === restaurantId)
       .filter(order => order.status !== 'completed') // Exclure les commandes terminées
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-    console.log(`${restaurantOrders.length} commandes trouvées`);
+    console.log(`📦 ${restaurantOrders.length} commandes trouvées`);
 
     res.json({ 
       orders: restaurantOrders,
       total: restaurantOrders.length
     });
   } catch (error) {
-    console.error('Erreur récupération commandes restaurant:', error);
+    console.error('❌ Erreur récupération commandes restaurant:', error);
     res.status(500).json({ error: 'Erreur lors de la récupération des commandes' });
   }
 });
@@ -509,7 +518,7 @@ app.put('/api/restaurant/orders/:id/status', authenticateRestaurant, (req, res) 
     const { status } = req.body;
     const restaurantId = req.restaurant.restaurantId;
 
-    console.log(`Mise à jour statut commande ${orderId} vers ${status}`);
+    console.log(`🔄 Mise à jour statut commande ${orderId} vers ${status}`);
 
     const orderIndex = db.orders.findIndex(order => 
       order.id === orderId && order.restaurantId === restaurantId
@@ -535,14 +544,14 @@ app.put('/api/restaurant/orders/:id/status', authenticateRestaurant, (req, res) 
       order.actualPrepTime = prepTime;
     }
 
-    console.log(`Commande ${orderId} mise à jour vers ${status}`);
+    console.log(`✅ Commande ${orderId} mise à jour vers ${status}`);
 
     res.json({
       message: `Commande mise à jour vers ${status}`,
       order: db.orders[orderIndex]
     });
   } catch (error) {
-    console.error('Erreur mise à jour statut:', error);
+    console.error('❌ Erreur mise à jour statut:', error);
     res.status(500).json({ error: 'Erreur lors de la mise à jour du statut' });
   }
 });
@@ -553,7 +562,7 @@ app.post('/api/restaurant/orders/scan', authenticateRestaurant, (req, res) => {
     const { qrCode } = req.body;
     const restaurantId = req.restaurant.restaurantId;
 
-    console.log('Scan QR Code par restaurant:', restaurantId);
+    console.log('📱 Scan QR Code par restaurant:', restaurantId);
 
     if (!qrCode) {
       return res.status(400).json({ error: 'QR Code requis' });
@@ -614,7 +623,7 @@ app.post('/api/restaurant/orders/scan', authenticateRestaurant, (req, res) => {
     db.orders[orderIndex].completedAt = new Date();
     db.orders[orderIndex].updatedAt = new Date();
 
-    console.log(`Commande ${order.id} récupérée avec succès`);
+    console.log(`✅ Commande ${order.id} récupérée avec succès`);
 
     res.json({
       success: true,
@@ -628,7 +637,7 @@ app.post('/api/restaurant/orders/scan', authenticateRestaurant, (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Erreur scan QR:', error);
+    console.error('❌ Erreur scan QR:', error);
     res.status(500).json({ 
       success: false, 
       error: 'Erreur lors de la validation du QR Code' 
@@ -690,7 +699,7 @@ app.get('/api/restaurant/stats', authenticateRestaurant, (req, res) => {
       avgPrepTime
     });
   } catch (error) {
-    console.error('Erreur statistiques restaurant:', error);
+    console.error('❌ Erreur statistiques restaurant:', error);
     res.status(500).json({ error: 'Erreur lors de la récupération des statistiques' });
   }
 });
@@ -704,10 +713,16 @@ app.get('/api/health', (req, res) => {
     status: 'OK', 
     message: 'CampusEats API is running on Render!',
     timestamp: new Date().toISOString(),
-    version: '1.0.0',
+    version: '1.1.0 - HASH CORRIGÉ',
     endpoints: {
       student: ['auth', 'restaurants', 'orders', 'profile'],
       restaurant: ['auth/login', 'orders', 'scan', 'stats']
+    },
+    debug: {
+      restaurantCredentials: [
+        'pizzeria@campus.fr / password123',
+        'green@campus.fr / password123'
+      ]
     }
   });
 });
@@ -716,13 +731,32 @@ app.use('*', (req, res) => {
   res.status(404).json({ error: 'Route non trouvée' });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, '0.0.0.0', async () => {
   console.log(`🚀 CampusEats API démarrée sur le port ${PORT}`);
   console.log(`🌐 Prêt à servir les étudiants du campus!`);
   console.log(`🏪 Dashboard restaurant disponible!`);
   console.log(`📊 Comptes restaurant de test:`);
   console.log(`   - pizzeria@campus.fr / password123`);
   console.log(`   - green@campus.fr / password123`);
+  
+  // Vérification automatique du hash au démarrage
+  console.log('\n🔐 === VÉRIFICATION HASH AU DÉMARRAGE ===');
+  try {
+    const testPassword = 'password123';
+    const correctHash = '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi';
+    
+    const isValid = await bcrypt.compare(testPassword, correctHash);
+    console.log(`✅ Test hash pour "${testPassword}": ${isValid ? 'VALIDE' : 'INVALIDE'}`);
+    
+    // Test avec les restaurants de la DB
+    for (const restaurant of db.restaurants) {
+      const restaurantTest = await bcrypt.compare(testPassword, restaurant.password);
+      console.log(`🏪 ${restaurant.name} (${restaurant.email}): ${restaurantTest ? '✅ OK' : '❌ ERREUR'}`);
+    }
+  } catch (error) {
+    console.error('❌ Erreur vérification hash:', error);
+  }
+  console.log('🔐 === FIN VÉRIFICATION ===\n');
 });
 
 module.exports = app;
