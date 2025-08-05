@@ -45,6 +45,9 @@ const db = {
       rating: 4.7,
       prepTime: '8-12 min',
       isOpen: true,
+      // Ajout des credentials restaurant
+      email: 'pizzeria@campus.fr',
+      password: '$2b$10$8K1p/a0dclxKOktjNhDYzeUslkh1Oa4VEFLfgOQU9jzb85bZtdCve', // "password123"
       menu: [
         { id: 1, name: 'Pizza Margherita', description: 'Tomates, mozzarella, basilic', price: 12.50, category: 'Pizza', image: '🍕' },
         { id: 2, name: 'Pâtes Carbonara', description: 'Pâtes fraîches, lardons, parmesan', price: 9.80, category: 'Pâtes', image: '🍝' },
@@ -60,6 +63,9 @@ const db = {
       rating: 4.9,
       prepTime: '5-8 min',
       isOpen: true,
+      // Ajout des credentials restaurant
+      email: 'green@campus.fr',
+      password: '$2b$10$8K1p/a0dclxKOktjNhDYzeUslkh1Oa4VEFLfgOQU9jzb85bZtdCve', // "password123"
       menu: [
         { id: 5, name: 'Bowl Healthy', description: 'Quinoa, avocat, légumes de saison', price: 11.90, category: 'Bowl', image: '🥗' },
         { id: 6, name: 'Smoothie Détox', description: 'Épinards, pomme, concombre, citron', price: 5.50, category: 'Boisson', image: '🥤' }
@@ -70,6 +76,7 @@ const db = {
   orderCounter: 1000
 };
 
+// Middlewares d'authentification
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
@@ -86,6 +93,31 @@ const authenticateToken = (req, res, next) => {
     next();
   });
 };
+
+// Middleware pour l'authentification restaurant
+const authenticateRestaurant = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ error: 'Token d\'accès requis' });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, restaurant) => {
+    if (err) {
+      return res.status(403).json({ error: 'Token invalide' });
+    }
+    if (!restaurant.restaurantId) {
+      return res.status(403).json({ error: 'Token restaurant invalide' });
+    }
+    req.restaurant = restaurant;
+    next();
+  });
+};
+
+// ============================================
+// ROUTES ÉTUDIANTS (existantes)
+// ============================================
 
 app.post('/api/auth/register', async (req, res) => {
   try {
@@ -216,6 +248,11 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Restaurant non trouvé' });
     }
 
+    const user = db.users.find(u => u.id === userId);
+    if (!user) {
+      return res.status(404).json({ error: 'Utilisateur non trouvé' });
+    }
+
     let total = 0;
     const orderItems = [];
 
@@ -229,7 +266,8 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
         id: menuItem.id,
         name: menuItem.name,
         price: menuItem.price,
-        quantity: item.quantity || 1
+        quantity: item.quantity || 1,
+        customizations: item.customizations || []
       });
 
       total += menuItem.price * (item.quantity || 1);
@@ -240,12 +278,19 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
       userId,
       restaurantId,
       restaurant: {
+        id: restaurant.id,
         name: restaurant.name,
         image: restaurant.image
+      },
+      student: {
+        id: user.id,
+        name: user.name,
+        email: user.email
       },
       items: orderItems,
       total,
       paymentMethod,
+      paymentStatus: paymentMethod === 'card' ? 'paid' : 'pending',
       specialInstructions: specialInstructions || '',
       status: 'pending',
       estimatedTime: 10,
@@ -253,9 +298,11 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
       updatedAt: new Date()
     };
 
+    // Générer le QR code
     const qrData = {
       orderId: order.id,
       userId: userId,
+      restaurantId: restaurantId,
       total: total,
       timestamp: new Date().toISOString()
     };
@@ -265,27 +312,18 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
 
     db.orders.push(order);
 
-    const user = db.users.find(u => u.id === userId);
-    if (user) {
-      user.loyaltyPoints += Math.floor(total);
-      user.totalOrders += 1;
-    }
+    // Mettre à jour les points de fidélité
+    user.loyaltyPoints += Math.floor(total);
+    user.totalOrders += 1;
 
-    setTimeout(() => {
-      const orderIndex = db.orders.findIndex(o => o.id === order.id);
-      if (orderIndex !== -1) {
-        db.orders[orderIndex].status = 'preparing';
-        db.orders[orderIndex].updatedAt = new Date();
-      }
-    }, 2000);
-
-    setTimeout(() => {
-      const orderIndex = db.orders.findIndex(o => o.id === order.id);
-      if (orderIndex !== -1) {
-        db.orders[orderIndex].status = 'ready';
-        db.orders[orderIndex].updatedAt = new Date();
-      }
-    }, order.estimatedTime * 60 * 1000);
+    // Simulation de progression automatique (optionnel pour démo)
+    // setTimeout(() => {
+    //   const orderIndex = db.orders.findIndex(o => o.id === order.id);
+    //   if (orderIndex !== -1 && db.orders[orderIndex].status === 'pending') {
+    //     db.orders[orderIndex].status = 'preparing';
+    //     db.orders[orderIndex].updatedAt = new Date();
+    //   }
+    // }, 30000); // 30 secondes
 
     res.status(201).json({
       message: 'Commande créée avec succès',
@@ -344,12 +382,333 @@ app.get('/api/profile', authenticateToken, (req, res) => {
   }
 });
 
+// ============================================
+// NOUVELLES ROUTES RESTAURANT
+// ============================================
+
+// Connexion restaurant
+app.post('/api/restaurant/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    console.log('Tentative de connexion restaurant:', email);
+
+    const restaurant = db.restaurants.find(r => r.email === email);
+    if (!restaurant) {
+      return res.status(400).json({ error: 'Email ou mot de passe incorrect' });
+    }
+
+    const isValidPassword = await bcrypt.compare(password, restaurant.password);
+    if (!isValidPassword) {
+      return res.status(400).json({ error: 'Email ou mot de passe incorrect' });
+    }
+
+    const token = jwt.sign(
+      { 
+        restaurantId: restaurant.id, 
+        email: restaurant.email,
+        name: restaurant.name
+      },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    console.log('Connexion restaurant réussie:', restaurant.name);
+
+    res.json({
+      message: 'Connexion restaurant réussie',
+      token,
+      restaurant: {
+        id: restaurant.id,
+        email: restaurant.email,
+        name: restaurant.name,
+        description: restaurant.description,
+        image: restaurant.image,
+        rating: restaurant.rating,
+        isOpen: restaurant.isOpen
+      }
+    });
+  } catch (error) {
+    console.error('Erreur connexion restaurant:', error);
+    res.status(500).json({ error: 'Erreur lors de la connexion' });
+  }
+});
+
+// Profil restaurant
+app.get('/api/restaurant/profile', authenticateRestaurant, (req, res) => {
+  try {
+    const restaurantId = req.restaurant.restaurantId;
+    const restaurant = db.restaurants.find(r => r.id === restaurantId);
+    
+    if (!restaurant) {
+      return res.status(404).json({ error: 'Restaurant non trouvé' });
+    }
+
+    // Calculer les statistiques
+    const restaurantOrders = db.orders.filter(order => order.restaurantId === restaurantId);
+    const todayOrders = restaurantOrders.filter(order => {
+      const orderDate = new Date(order.createdAt);
+      const today = new Date();
+      return orderDate.toDateString() === today.toDateString();
+    });
+
+    const todayRevenue = todayOrders
+      .filter(order => order.paymentStatus === 'paid')
+      .reduce((sum, order) => sum + order.total, 0);
+
+    res.json({
+      restaurant: {
+        id: restaurant.id,
+        name: restaurant.name,
+        email: restaurant.email,
+        description: restaurant.description,
+        image: restaurant.image,
+        rating: restaurant.rating,
+        isOpen: restaurant.isOpen,
+        stats: {
+          todayOrders: todayOrders.length,
+          todayRevenue: todayRevenue,
+          totalOrders: restaurantOrders.length
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Erreur profil restaurant:', error);
+    res.status(500).json({ error: 'Erreur lors de la récupération du profil' });
+  }
+});
+
+// Récupérer les commandes du restaurant
+app.get('/api/restaurant/orders', authenticateRestaurant, (req, res) => {
+  try {
+    const restaurantId = req.restaurant.restaurantId;
+    
+    console.log('Récupération commandes pour restaurant:', restaurantId);
+    
+    const restaurantOrders = db.orders
+      .filter(order => order.restaurantId === restaurantId)
+      .filter(order => order.status !== 'completed') // Exclure les commandes terminées
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    console.log(`${restaurantOrders.length} commandes trouvées`);
+
+    res.json({ 
+      orders: restaurantOrders,
+      total: restaurantOrders.length
+    });
+  } catch (error) {
+    console.error('Erreur récupération commandes restaurant:', error);
+    res.status(500).json({ error: 'Erreur lors de la récupération des commandes' });
+  }
+});
+
+// Mettre à jour le statut d'une commande
+app.put('/api/restaurant/orders/:id/status', authenticateRestaurant, (req, res) => {
+  try {
+    const orderId = parseInt(req.params.id);
+    const { status } = req.body;
+    const restaurantId = req.restaurant.restaurantId;
+
+    console.log(`Mise à jour statut commande ${orderId} vers ${status}`);
+
+    const orderIndex = db.orders.findIndex(order => 
+      order.id === orderId && order.restaurantId === restaurantId
+    );
+
+    if (orderIndex === -1) {
+      return res.status(404).json({ error: 'Commande non trouvée' });
+    }
+
+    const validStatuses = ['pending', 'preparing', 'ready', 'completed', 'rejected'];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ error: 'Statut invalide' });
+    }
+
+    // Mettre à jour le statut
+    db.orders[orderIndex].status = status;
+    db.orders[orderIndex].updatedAt = new Date();
+
+    // Si la commande passe en "ready", calculer le temps de préparation réel
+    if (status === 'ready') {
+      const order = db.orders[orderIndex];
+      const prepTime = Math.round((new Date() - new Date(order.createdAt)) / (1000 * 60));
+      order.actualPrepTime = prepTime;
+    }
+
+    console.log(`Commande ${orderId} mise à jour vers ${status}`);
+
+    res.json({
+      message: `Commande mise à jour vers ${status}`,
+      order: db.orders[orderIndex]
+    });
+  } catch (error) {
+    console.error('Erreur mise à jour statut:', error);
+    res.status(500).json({ error: 'Erreur lors de la mise à jour du statut' });
+  }
+});
+
+// Scanner et valider un QR code
+app.post('/api/restaurant/orders/scan', authenticateRestaurant, (req, res) => {
+  try {
+    const { qrCode } = req.body;
+    const restaurantId = req.restaurant.restaurantId;
+
+    console.log('Scan QR Code par restaurant:', restaurantId);
+
+    if (!qrCode) {
+      return res.status(400).json({ error: 'QR Code requis' });
+    }
+
+    let qrData;
+    try {
+      // Le QR code contient les données JSON de la commande
+      qrData = JSON.parse(qrCode);
+    } catch (e) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'QR Code invalide - format incorrect' 
+      });
+    }
+
+    // Vérifier que le QR code contient les bonnes données
+    if (!qrData.orderId) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'QR Code invalide - données manquantes' 
+      });
+    }
+
+    // Trouver la commande
+    const orderIndex = db.orders.findIndex(order => 
+      order.id === qrData.orderId && 
+      order.restaurantId === restaurantId
+    );
+
+    if (orderIndex === -1) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Commande non trouvée ou non autorisée' 
+      });
+    }
+
+    const order = db.orders[orderIndex];
+
+    // Vérifier le statut de la commande
+    if (order.status !== 'ready') {
+      return res.status(400).json({ 
+        success: false, 
+        error: `Commande non prête (statut: ${order.status})` 
+      });
+    }
+
+    // Vérifier si déjà récupérée
+    if (order.status === 'completed') {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Commande déjà récupérée' 
+      });
+    }
+
+    // Marquer comme terminée
+    db.orders[orderIndex].status = 'completed';
+    db.orders[orderIndex].completedAt = new Date();
+    db.orders[orderIndex].updatedAt = new Date();
+
+    console.log(`Commande ${order.id} récupérée avec succès`);
+
+    res.json({
+      success: true,
+      message: 'QR Code validé avec succès',
+      order: {
+        id: order.id,
+        student: order.student,
+        items: order.items,
+        total: order.total,
+        status: 'completed'
+      }
+    });
+  } catch (error) {
+    console.error('Erreur scan QR:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Erreur lors de la validation du QR Code' 
+    });
+  }
+});
+
+// Statistiques restaurant
+app.get('/api/restaurant/stats', authenticateRestaurant, (req, res) => {
+  try {
+    const restaurantId = req.restaurant.restaurantId;
+    const restaurantOrders = db.orders.filter(order => order.restaurantId === restaurantId);
+    
+    // Statistiques aujourd'hui
+    const today = new Date();
+    const todayOrders = restaurantOrders.filter(order => {
+      const orderDate = new Date(order.createdAt);
+      return orderDate.toDateString() === today.toDateString();
+    });
+
+    // Revenus du jour
+    const todayRevenue = todayOrders
+      .filter(order => order.paymentStatus === 'paid')
+      .reduce((sum, order) => sum + order.total, 0);
+
+    // Plats populaires
+    const itemCounts = {};
+    restaurantOrders.forEach(order => {
+      order.items.forEach(item => {
+        itemCounts[item.name] = (itemCounts[item.name] || 0) + item.quantity;
+      });
+    });
+
+    const popularItems = Object.entries(itemCounts)
+      .sort(([,a], [,b]) => b - a)
+      .slice(0, 5)
+      .map(([name, count]) => ({ name, count }));
+
+    // Temps de préparation moyen
+    const completedOrders = restaurantOrders.filter(order => order.actualPrepTime);
+    const avgPrepTime = completedOrders.length > 0 
+      ? Math.round(completedOrders.reduce((sum, order) => sum + order.actualPrepTime, 0) / completedOrders.length)
+      : 0;
+
+    res.json({
+      today: {
+        orders: todayOrders.length,
+        revenue: todayRevenue,
+        pending: todayOrders.filter(o => o.status === 'pending').length,
+        preparing: todayOrders.filter(o => o.status === 'preparing').length,
+        ready: todayOrders.filter(o => o.status === 'ready').length,
+        completed: todayOrders.filter(o => o.status === 'completed').length
+      },
+      total: {
+        orders: restaurantOrders.length,
+        revenue: restaurantOrders.filter(o => o.paymentStatus === 'paid').reduce((sum, o) => sum + o.total, 0)
+      },
+      popularItems,
+      avgPrepTime
+    });
+  } catch (error) {
+    console.error('Erreur statistiques restaurant:', error);
+    res.status(500).json({ error: 'Erreur lors de la récupération des statistiques' });
+  }
+});
+
+// ============================================
+// ROUTES COMMUNES
+// ============================================
+
 app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'OK', 
     message: 'CampusEats API is running on Render!',
     timestamp: new Date().toISOString(),
-    version: '1.0.0'
+    version: '1.0.0',
+    endpoints: {
+      student: ['auth', 'restaurants', 'orders', 'profile'],
+      restaurant: ['auth/login', 'orders', 'scan', 'stats']
+    }
   });
 });
 
@@ -360,6 +719,10 @@ app.use('*', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 CampusEats API démarrée sur le port ${PORT}`);
   console.log(`🌐 Prêt à servir les étudiants du campus!`);
+  console.log(`🏪 Dashboard restaurant disponible!`);
+  console.log(`📊 Comptes restaurant de test:`);
+  console.log(`   - pizzeria@campus.fr / password123`);
+  console.log(`   - green@campus.fr / password123`);
 });
 
 module.exports = app;
